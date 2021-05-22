@@ -31,11 +31,29 @@ from tkinter import filedialog
 
 # In[2]:
 
+def rgb2gray(rgb):
+    return np.dot(rgb[...,:3], [0.2989, 0.5870, 0.1140])
 
 def loadFile(filename):
     ds = sitk.ReadImage(filename)
+    #print (ds)
+    '''print (ds.GetDimension())
+    print (ds.GetWidth())
+    print (ds.GetHeight())
+    print (ds.GetDepth())
+    print (ds.GetNumberOfComponentsPerPixel())
+    print (ds.GetPixelIDTypeAsString())'''
     img_array = sitk.GetArrayFromImage(ds)
-    frame_num, width, height = img_array.shape
+    '''print (img_array.shape)
+    print (img_array.dtype)'''
+    try:
+        frame_num, width, height = img_array.shape
+    except Exception as e:
+        #grayimg = cv2.cvtColor(img_array, cv2.COLOR_BGR2GRAY)
+        #img_array = rgb2gray(img_array)
+        #img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2GRAY)
+        frame_num, width, height, component = img_array.shape
+    #print (img_array.shape)
     return img_array, frame_num, width, height
 
 
@@ -97,7 +115,7 @@ def limitedEqualize(img_array, limit):
 def writeVideo(img_array, filename, directory, targetFormat): # img_array is a single DICOM file
     frame_num, width, height = img_array.shape
     
-    if targetFormat == 'AVI':   # If choose the AVI output format   
+    '''if targetFormat == 'AVI':   # If choose the AVI output format   
         filename_output = directory + '/' + filename.split('.')[0].split('/')[-1] + '.avi'  
         fourcc = cv2.VideoWriter_fourcc('M','J','P','G') # Motion-jpeg codec
 
@@ -108,10 +126,12 @@ def writeVideo(img_array, filename, directory, targetFormat): # img_array is a s
         
         #fourcc = cv2.VideoWriter_fourcc('M','P','E','G') # MPEG
         
-        #fourcc = cv2.VideoWriter_fourcc('Y','4','1','P') # Brooktree YUV 4:1:1
-    elif targetFormat == 'MP4': # If choose the MP4 output format
-        filename_output = directory + '/' + filename.split('.')[0].split('/')[-1] + '.mp4'
-        fourcc = cv2.VideoWriter_fourcc('M','P','4','2') # MPEG-4        
+        #fourcc = cv2.VideoWriter_fourcc('Y','4','1','P') # Brooktree YUV 4:1:1'''
+    if targetFormat == 'MP4': # If choose the MP4 output format
+        print (filename)
+        filename_output = directory + '/' + filename.rsplit('.', 1)[0].split('/')[-1] + '.mp4'
+        print (filename_output)
+        fourcc = cv2.VideoWriter_fourcc('M','P','4','V') # MPEG-4
     
     # Key statement: default value is 15./////////////////////////
     cineRate = int(informations[filename]['CineRate'])
@@ -225,7 +245,8 @@ def loadFileButton():
                 # The keys are filenames
                 isLoad = 1
             messagebox.showinfo("DICOM File Loaded", "DICOM file successfully loaded!")
-        except:
+        except Exception as e:
+            print (e)
             messagebox.showwarning("File Loading Failed", "Sorry, file loading failed! Please check the file format.")
 
 
@@ -249,8 +270,10 @@ def convertVideoButton():
         if directory == '':
             messagebox.showwarning("No Directory", "Sorry, no directory shown! Please specify the output directory.")
         else:
-            for filename in filenames:  
-                img_array_limited_equalized = limitedEqualize(img_array[filename], clipLimit)
+            for filename in filenames:
+                image = img_array[filename]
+                #img_u8 = image.astype(np.uint8)
+                img_array_limited_equalized = limitedEqualize(image, clipLimit)
                 writeVideo(img_array_limited_equalized, filename, directory, targetFormat)
                 #messagebox.showinfo("Video File Converted", "Video file successfully generated!")
                 isLoad = 0
@@ -447,10 +470,10 @@ combo_target_format = ttk.Combobox(root, width=7, height=1, font=('tahoma', 8))
 combo_target_format.place(x=60, y=y_position+5)
 label_target_format = tk.Label(root, text='Output Format:', font=('tahoma', 8))
 label_target_format.place(x=60,y=y_position-20)
-combo_target_format['values'] = ('AVI', 'MP4')
+combo_target_format['values'] = ('MP4')
 combo_target_format['state'] = 'readonly'
 
-combo_target_format.set('AVI')
+combo_target_format.set('MP4')
 
 #/////////////Button///////////////////////////////////////////////////////////////
 button_browse=ttk.Button(root, text='Browse...', width=20, command=browseFileButton)
