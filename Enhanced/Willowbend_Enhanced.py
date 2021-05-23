@@ -70,9 +70,8 @@ def loadAllFile(filenames, img_array):
                 except Exception as e:
                     print (e)
         for instanceId in img_array:
-            #print (instanceId)
-            #print (img_array[instanceId].shape)
-
+    #print (instanceId)
+    #print (img_array[instanceId].shape)
     except Exception as e:
         seriesList = ()
         print (e)
