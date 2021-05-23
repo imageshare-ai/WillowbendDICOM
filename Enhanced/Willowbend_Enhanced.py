@@ -324,8 +324,8 @@ def convertVideoButton():
             for series in seriesList:
                 image = img_array[series]
                 #img_u8 = image.astype(np.uint8)
-                img_array_limited_equalized = limitedEqualize(image, clipLimit)
-                writeVideo(img_array_limited_equalized, series, directory, targetFormat)
+                #img_array_limited_equalized = limitedEqualize(image, clipLimit)
+                writeVideo(image, series, directory, targetFormat)
                 #messagebox.showinfo("Video File Converted", "Video file successfully generated!")
                 isLoad = 0
             messagebox.showinfo("Video File Converted", targetFormat + " video(s) successfully converted!")
