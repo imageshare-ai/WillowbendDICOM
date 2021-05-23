@@ -23,6 +23,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
 from tkinter import filedialog
+from collections import OrderedDict
 
 
 # ## Helper Functions
@@ -34,6 +35,49 @@ from tkinter import filedialog
 def rgb2gray(rgb):
     return np.dot(rgb[...,:3], [0.2989, 0.5870, 0.1140])
 
+def loadAllFile(filenames, img_array):
+    dicom_series = {}
+    global seriesList
+    seriesList = []
+    try:
+        for filename in filenames:
+            ds = pydicom.read_file(filename)
+            seriesInstanceUID = ds.get("SeriesInstanceUID","NA")
+            instanceNumber = ds.get("InstanceNumber",0)
+            if seriesInstanceUID not in dicom_series:
+                #print (seriesInstanceUID, instanceNumber)
+                dicom_series[seriesInstanceUID] = {}
+            dicom_series[seriesInstanceUID][instanceNumber] = filename
+        for instanceId in dicom_series:
+            #print (instanceId)
+            orderedImages = OrderedDict(sorted(dicom_series[instanceId].items()))
+            seriesList.append(instanceId)
+            number = 0
+            for images in orderedImages:
+                filename = orderedImages[images]
+                ds = sitk.ReadImage(filename)
+                if ds.GetNumberOfComponentsPerPixel() > 1:
+                    raise TypeError('Only scalar images allowed')
+                img_array_single = sitk.GetArrayFromImage(ds)
+                if img_array_single.dtype != "uint8":
+                    img_array_single = np.uint8(img_array_single)
+                try:
+                    if number == 0:
+                        img_array[instanceId] = img_array_single
+                    else:
+                        img_array[instanceId] = np.concatenate((img_array[instanceId], img_array_single), axis = 0)
+                    number = number + 1
+                except Exception as e:
+                    print (e)
+        for instanceId in img_array:
+            #print (instanceId)
+            #print (img_array[instanceId].shape)
+
+    except Exception as e:
+        seriesList = ()
+        print (e)
+
+
 def loadFile(filename):
     ds = sitk.ReadImage(filename)
     #print (ds)
@@ -43,9 +87,13 @@ def loadFile(filename):
     print (ds.GetDepth())
     print (ds.GetNumberOfComponentsPerPixel())
     print (ds.GetPixelIDTypeAsString())'''
+    if ds.GetNumberOfComponentsPerPixel() > 1:
+        raise TypeError('Only scalar images allowed')
     img_array = sitk.GetArrayFromImage(ds)
     '''print (img_array.shape)
     print (img_array.dtype)'''
+    if img_array.dtype != "uint8":
+        img_array = np.uint8(img_array)
     try:
         frame_num, width, height = img_array.shape
     except Exception as e:
@@ -63,7 +111,7 @@ def loadFile(filename):
 def loadFileInformation(filename):
     information = {}
     ds = pydicom.read_file(filename)
-    
+
     information['PatientID'] = ds.PatientID
     information['PatientName'] = ds.PatientName
     information['PatientBirthDate'] = ds.PatientBirthDate
@@ -73,15 +121,18 @@ def loadFileInformation(filename):
     information['StudyTime'] = ds.StudyTime
     information['InstitutionName'] = ds.InstitutionName
     information['Manufacturer'] = ds.Manufacturer
-    information['NumberOfFrames'] = ds.NumberOfFrames
-    
+    try:
+        information['NumberOfFrames'] = ds.NumberOfFrames
+    except:
+        information['NumberOfFrames'] = 1
+
     # Try whether the dicom can extract the CineRate attribute.
     # if not, then follow the global variable fps
     try:
         information['CineRate'] = ds.CineRate # extract the frame per second value
     except:
         information['CineRate'] = fps # Not all the DICOM has the CineRate attribute
-    
+
     return information # The return type is dictionary
 
 
@@ -104,9 +155,9 @@ def limitedEqualize(img_array, limit):
     for img in img_array:
         clahe = cv2.createCLAHE(clipLimit=limit, tileGridSize=(8,8))  #CLAHE (Contrast Limited Adaptive Histogram Equalization)
         img_array_list.append(clahe.apply(img))
-        
+
     img_array_limited_equalized = np.array(img_array_list, dtype=np.uint8)
-    return img_array_limited_equalized   
+    return img_array_limited_equalized
 
 
 # In[6]:
@@ -114,7 +165,7 @@ def limitedEqualize(img_array, limit):
 
 def writeVideo(img_array, filename, directory, targetFormat): # img_array is a single DICOM file
     frame_num, width, height = img_array.shape
-    
+
     '''if targetFormat == 'AVI':   # If choose the AVI output format   
         filename_output = directory + '/' + filename.split('.')[0].split('/')[-1] + '.avi'  
         fourcc = cv2.VideoWriter_fourcc('M','J','P','G') # Motion-jpeg codec
@@ -129,22 +180,23 @@ def writeVideo(img_array, filename, directory, targetFormat): # img_array is a s
         #fourcc = cv2.VideoWriter_fourcc('Y','4','1','P') # Brooktree YUV 4:1:1'''
     if targetFormat == 'MP4': # If choose the MP4 output format
         print (filename)
-        filename_output = directory + '/' + filename.rsplit('.', 1)[0].split('/')[-1] + '.mp4'
+        #filename_output = directory + '/' + filename.rsplit('.', 1)[0].split('/')[-1] + '.mp4'
+        filename_output = directory + '/' + filename + '.mp4'
         print (filename_output)
         fourcc = cv2.VideoWriter_fourcc('M','P','4','V') # MPEG-4
-    
+
     # Key statement: default value is 15./////////////////////////
-    cineRate = int(informations[filename]['CineRate'])
-    
-    video = cv2.VideoWriter(filename_output, fourcc, cineRate, (width, height)) # Initialize Video File 
-    # The parameter cineRate is the frame per second. 
-    
+    cineRate = int(fps)
+
+    video = cv2.VideoWriter(filename_output, fourcc, cineRate, (width, height)) # Initialize Video File
+    # The parameter cineRate is the frame per second.
+
     for frame in img_array:
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
         video.write(frame_rgb) # Write video file frame by frame
-        
+
         #cv2.imshow('frame', frame) # Show the videos
-        
+
     video.release()
 
 
@@ -155,30 +207,30 @@ def writeVideo(img_array, filename, directory, targetFormat): # img_array is a s
 
 def browseFileButton():
     global filenames, fps
-    
-    file_list = []    
+
+    file_list = []
     fps = int(text_fps.get('1.0', tk.END))
-    
-    # The variable informations is all the dicom information dictionary, 
+
+    # The variable informations is all the dicom information dictionary,
     # while the variable information is the first dcm file(filename[0]) dicom information
-    
+
     try:
         filenames = filedialog.askopenfilenames(filetypes=(('DICOM files', '*.dcm'), ('All files', '*.*')))
-        
+
         # Extract the first one's information
-        information = loadFileInformation(filenames[0])        
-        
+        information = loadFileInformation(filenames[0])
+
         for filename in filenames:
             item = filename.split('/')[-1]
             file_list.append(item)
 
             file_list_str = str(file_list) + ' -- ' + str(len(filenames)) + ' files'
-        
+
         # The files picked up are TUPLE!!!!!! ///////////////////////////
 
         text_filename.delete('1.0', tk.END)
         text_filename.insert('1.0', filenames[0])
-        
+
         text_filenames.delete('1.0', tk.END)
         text_filenames.insert('1.0', file_list_str)
 
@@ -210,15 +262,16 @@ def browseFileButton():
         text_Manufacturer.insert('1.0', information['Manufacturer'])
 
         text_NumberOfFrames.delete('1.0', tk.END)
-        text_NumberOfFrames.insert('1.0', information['NumberOfFrames'])        
-                
+        text_NumberOfFrames.insert('1.0', information['NumberOfFrames'])
+
         text_fps.delete('1.0', tk.END)
-        text_fps.insert('1.0', information['CineRate'])        
-        
+        text_fps.insert('1.0', information['CineRate'])
+
         text_file_num.delete('1.0', tk.END)
         text_file_num.insert('1.0', len(filenames))
-      
-    except:
+
+    except Exception as e:
+        print (e)
         filenames = {}
 
 
@@ -232,18 +285,20 @@ def loadFileButton():
     width = {}
     height = {}
     informations = {}
-    
+
     if filenames == ():
         messagebox.showwarning("No File", "Sorry, no file loaded! Please choose DICOM file first.")
     else:
         try:
-            for filename in filenames:                
+            loadAllFile(filenames, img_array)
+            '''for filename in filenames:
                 img_array[filename], frame_num[filename], width[filename], height[filename] = loadFile(filename)
-                
+
                 # Extract the all the information including fps(Frame per Second)
-                informations[filename] = loadFileInformation(filename) # Return is a dictionary
+                #informations[filename] = loadFileInformation(filename) # Return is a dictionary
                 # The keys are filenames
-                isLoad = 1
+                isLoad = 1'''
+            isLoad = 1
             messagebox.showinfo("DICOM File Loaded", "DICOM file successfully loaded!")
         except Exception as e:
             print (e)
@@ -254,27 +309,27 @@ def loadFileButton():
 
 
 def convertVideoButton():
-    global isLoad, clipLimit, filename, fps    
-             
-    if filenames == ():
+    global isLoad, clipLimit, filename, fps
+
+    if seriesList == ():
         messagebox.showwarning("No File to be Converted", "Sorry, no file to be converted! Please choose a DICOM file first.")
     elif isLoad == 0:
         messagebox.showwarning("No File Loaded", "Sorry, no file loaded! Please load the chosen DICOM file.")
-    
+
     else:
         clipLimit = float(text_clipLimit.get('1.0', tk.END))
         targetFormat = combo_target_format.get().rstrip()
-            
+
         directory = filedialog.askdirectory()
-        
+
         if directory == '':
             messagebox.showwarning("No Directory", "Sorry, no directory shown! Please specify the output directory.")
         else:
-            for filename in filenames:
-                image = img_array[filename]
+            for series in seriesList:
+                image = img_array[series]
                 #img_u8 = image.astype(np.uint8)
                 img_array_limited_equalized = limitedEqualize(image, clipLimit)
-                writeVideo(img_array_limited_equalized, filename, directory, targetFormat)
+                writeVideo(img_array_limited_equalized, series, directory, targetFormat)
                 #messagebox.showinfo("Video File Converted", "Video file successfully generated!")
                 isLoad = 0
             messagebox.showinfo("Video File Converted", targetFormat + " video(s) successfully converted!")
@@ -285,7 +340,7 @@ def convertVideoButton():
 
 def about():
     about_root=tk.Tk()
-    
+
     w = 370 # width for the Tk root
     h = 270 # height for the Tk root
 
@@ -300,7 +355,7 @@ def about():
     # set the dimensions of the screen 
     # and where it is placed
     about_root.geometry('%dx%d+%d+%d' % (w, h, x, y))
-    about_root.title('About Willowbend DICOM')  
+    about_root.title('About Willowbend DICOM')
     about_root.iconbitmap('Heart.ico')
 
     label_version=tk.Label(about_root,text='Willowbend DICOM Version 3.0', font=('tahoma', 9))
@@ -308,16 +363,16 @@ def about():
 
     label_copyright=tk.Label(about_root,text='Copyright (C) 2019', font=('tahoma', 9))
     label_copyright.place(x=125,y=60)
-    
+
     label_author=tk.Label(about_root,text='Author: Chuan Yang', font=('tahoma', 9))
     label_author.place(x=125,y=90)
-    
+
     label_institution=tk.Label(about_root,text='Shengjing Hospital of China Medical University', font=('tahoma', 9))
     label_institution.place(x=65,y=120)
-    
+
     label_author=tk.Label(about_root,text='License: The MIT License (MIT)', font=('tahoma', 9))
     label_author.place(x=90,y=150)
-   
+
 
     button_refresh=ttk.Button(about_root, width=15, text='OK', command=about_root.destroy)
     button_refresh.place(x=135, y=210)
@@ -356,6 +411,7 @@ clipLimit = 1.5
 fps = 15
 filename = ''
 filenames = ()
+seriesList = ()
 
 # //////// Frame /////////////////////////////
 
