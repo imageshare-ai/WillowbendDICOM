@@ -68,6 +68,9 @@ def loadAllFile(filenames, img_array):
                 outputfile = filename.replace('.dcm','.png')
                 #img_array_single = (np.maximum(ds.pixel_array, 0) / ds.pixel_array.max()) * 255.0
                 img_array_single = ds.pixel_array.astype(float)
+
+                exposure = ds.Exposure
+                img_array_single += (200-exposure)
                 #print (img_array_single.shape)
                 max = ds.pixel_array.max()
                 img_array_single.clip(0, max , out=img_array_single)
@@ -81,6 +84,7 @@ def loadAllFile(filenames, img_array):
                 #img_array_single -= min
                 min = img_array_single.min()
                 max = img_array_single.max()
+                img_array_single[img_array_single > 0] += max
                 #print (min, max)
                 np.divide(img_array_single, (max-min+1) / 256, out=img_array_single, casting='unsafe')
                 #cv2.imwrite(outputfile, img_array_single)
