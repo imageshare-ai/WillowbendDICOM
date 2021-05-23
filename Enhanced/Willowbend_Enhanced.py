@@ -24,6 +24,7 @@ from tkinter import ttk
 from tkinter import messagebox
 from tkinter import filedialog
 from collections import OrderedDict
+from pydicom.pixel_data_handlers.util import apply_voi_lut
 
 
 # ## Helper Functions
@@ -41,7 +42,11 @@ def loadAllFile(filenames, img_array):
     seriesList = []
     try:
         for filename in filenames:
-            ds = pydicom.read_file(filename)
+            ds = pydicom.dcmread(filename)
+            try:
+                ds.decompress()
+            except:
+                print ("Could not decompress")
             seriesInstanceUID = ds.get("SeriesInstanceUID","NA")
             instanceNumber = ds.get("InstanceNumber",0)
             if seriesInstanceUID not in dicom_series:
@@ -55,13 +60,45 @@ def loadAllFile(filenames, img_array):
             number = 0
             for images in orderedImages:
                 filename = orderedImages[images]
+                ds = pydicom.dcmread(filename)
+                '''if 'WindowWidth' in ds:
+                    print('Dataset has windowing')'''
+
+                #windowed = apply_voi_lut(ds.pixel_array, ds)
+                outputfile = filename.replace('.dcm','.png')
+                #img_array_single = (np.maximum(ds.pixel_array, 0) / ds.pixel_array.max()) * 255.0
+                img_array_single = ds.pixel_array.astype(float)
+                #print (img_array_single.shape)
+                max = ds.pixel_array.max()
+                img_array_single.clip(0, max , out=img_array_single)
+                #cv2.imwrite(outputfile, img_array_single)
+                '''print (min, max)
+                img_array_single[img_array_single>0] -= min'''
+                '''min = ds.pixel_array.min()
+                max = ds.pixel_array.max()
+                print (min, max)'''
+                #img_array_single.clip(min, max , out=img_array_single)
+                #img_array_single -= min
+                min = img_array_single.min()
+                max = img_array_single.max()
+                #print (min, max)
+                np.divide(img_array_single, (max-min+1) / 256, out=img_array_single, casting='unsafe')
+                #cv2.imwrite(outputfile, img_array_single)
+                '''min = ds.pixel_array.min()
+                max = ds.pixel_array.max()
+                #print (min, max)'''
+                img_array_single = np.uint8(img_array_single)
+                #print (img_array_single.shape)
+                '''cv2.imwrite(outputfile,windowed)
                 ds = sitk.ReadImage(filename)
                 if ds.GetNumberOfComponentsPerPixel() > 1:
                     raise TypeError('Only scalar images allowed')
                 img_array_single = sitk.GetArrayFromImage(ds)
                 if img_array_single.dtype != "uint8":
-                    img_array_single = np.uint8(img_array_single)
+                    img_array_single = np.uint8(img_array_single)'''
                 try:
+                    img_array_single = img_array_single[np.newaxis]
+                    #print (img_array_single.shape)
                     if number == 0:
                         img_array[instanceId] = img_array_single
                     else:
@@ -174,11 +211,12 @@ def writeVideo(img_array, filename, directory, targetFormat): # img_array is a s
         #fourcc = cv2.VideoWriter_fourcc('M','P','E','G') # MPEG
         
         #fourcc = cv2.VideoWriter_fourcc('Y','4','1','P') # Brooktree YUV 4:1:1'''
+    filename_output = ""
     if targetFormat == 'MP4': # If choose the MP4 output format
-        print (filename)
+        #print (filename)
         #filename_output = directory + '/' + filename.rsplit('.', 1)[0].split('/')[-1] + '.mp4'
         filename_output = directory + '/' + filename + '.mp4'
-        print (filename_output)
+        #print (filename_output)
         fourcc = cv2.VideoWriter_fourcc('M','P','4','V') # MPEG-4
 
     # Key statement: default value is 15./////////////////////////
@@ -324,8 +362,9 @@ def convertVideoButton():
             for series in seriesList:
                 image = img_array[series]
                 #img_u8 = image.astype(np.uint8)
-                #img_array_limited_equalized = limitedEqualize(image, clipLimit)
-                writeVideo(image, series, directory, targetFormat)
+                img_array_limited_equalized = limitedEqualize(image, clipLimit)
+                #img_array_limited_equalized = autoEqualize(image)
+                writeVideo(img_array_limited_equalized, series, directory, targetFormat)
                 #messagebox.showinfo("Video File Converted", "Video file successfully generated!")
                 isLoad = 0
             messagebox.showinfo("Video File Converted", targetFormat + " video(s) successfully converted!")
@@ -403,7 +442,7 @@ root.title('Willowbend DICOM Enhanced')
 root.iconbitmap('Heart.ico')
 
 isLoad = 0
-clipLimit = 1.5
+clipLimit = 2
 fps = 15
 filename = ''
 filenames = ()
